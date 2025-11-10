@@ -35,7 +35,25 @@ Amazon Q Event Stream → event_stream_parser.py → parser.py → stream_handle
 
 ## 快速开始
 
-### 1. 安装依赖
+### 使用 Docker（推荐）
+
+```bash
+# 1. 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入你的 Amazon Q 凭证
+
+# 2. 启动服务
+docker compose up -d
+
+# 3. 验证
+curl http://localhost:8080/health
+```
+
+📖 **详细的 Docker 部署文档：[DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)**
+
+### 本地部署
+
+#### 1. 安装依赖
 
 ```bash
 # 创建虚拟环境
@@ -50,7 +68,7 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-### 2. 配置环境变量
+#### 2. 配置环境变量
 
 ```bash
 # 复制配置模板
@@ -64,7 +82,7 @@ cp .env.example .env
 # - PORT: 服务端口（默认 8080）
 ```
 
-### 3. 启动服务
+#### 3. 启动服务
 
 ```bash
 # 使用启动脚本（推荐）
@@ -75,7 +93,7 @@ chmod +x start.sh
 python3 main.py
 ```
 
-### 4. 测试服务
+#### 4. 测试服务
 
 ```bash
 # 健康检查
@@ -212,6 +230,9 @@ amq2api/
 ├── .env.example          # 环境变量模板
 ├── .gitignore           # Git 忽略文件
 ├── README.md            # 使用说明
+├── DOCKER_DEPLOY.md     # Docker 部署文档
+├── Dockerfile           # Docker 镜像构建
+├── docker-compose.yml   # Docker Compose 配置
 ├── requirements.txt     # Python 依赖
 ├── start.sh            # 启动脚本
 ├── config.py           # 配置管理
