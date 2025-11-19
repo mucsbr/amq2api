@@ -239,6 +239,56 @@ async def refresh_legacy_token() -> bool:
         raise TokenRefreshError(f"刷新失败: {str(e)}") from e
 
 
+async def get_auth_headers_for_account(account: Dict[str, Any]) -> Dict[str, str]:
+    """
+    为指定账号获取认证头
+
+    Args:
+        account: 账号信息字典
+
+    Returns:
+        Dict[str, str]: 认证头
+
+    Raises:
+        TokenRefreshError: Token 刷新失败时抛出异常
+    """
+    access_token = account.get("accessToken")
+    token_expired = False
+
+    # 检查 JWT token 是否过期
+    if access_token:
+        try:
+            import base64
+            import json
+            from datetime import datetime
+
+            parts = access_token.split('.')
+            if len(parts) == 3:
+                payload = base64.urlsafe_b64decode(parts[1] + '==')
+                token_data = json.loads(payload)
+                exp = token_data.get('exp')
+                if exp:
+                    exp_time = datetime.fromtimestamp(exp)
+                    if datetime.now() >= exp_time:
+                        token_expired = True
+                        logger.info(f"账号 {account['id']} 的 accessToken 已过期")
+        except Exception as e:
+            logger.warning(f"解析 JWT token 失败: {e}")
+
+    # 如果没有 access_token 或 token 已过期，尝试刷新
+    if not access_token or token_expired:
+        logger.info(f"账号 {account['id']} 需要刷新 token")
+        account = await refresh_account_token(account)
+        access_token = account.get("accessToken")
+
+        if not access_token:
+            raise TokenRefreshError("刷新后仍无法获取 accessToken")
+
+    return {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+
 async def get_auth_headers_with_retry() -> Tuple[Optional[Dict[str, Any]], Dict[str, str]]:
     """
     获取认证头，支持 401/403 重试机制

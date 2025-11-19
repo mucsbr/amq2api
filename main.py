@@ -218,12 +218,29 @@ async def create_message(request: Request):
         logger.info(f"转换后的请求体: {json.dumps(final_request, indent=2, ensure_ascii=False)}")
 
         # 获取账号和认证头（支持多账号随机选择和单账号回退）
+        # 检查是否指定了特定账号（用于测试）
+        specified_account_id = request.headers.get("X-Account-ID")
+
         try:
-            account, base_auth_headers = await get_auth_headers_with_retry()
-            if account:
-                logger.info(f"使用多账号模式 - 账号: {account.get('id')} (label: {account.get('label', 'N/A')})")
+            if specified_account_id:
+                # 使用指定的账号
+                account = get_account(specified_account_id)
+                if not account:
+                    raise HTTPException(status_code=404, detail=f"账号不存在: {specified_account_id}")
+                if not account.get('enabled'):
+                    raise HTTPException(status_code=403, detail=f"账号已禁用: {specified_account_id}")
+
+                # 获取该账号的认证头
+                from auth import get_auth_headers_for_account
+                base_auth_headers = await get_auth_headers_for_account(account)
+                logger.info(f"使用指定账号 - 账号: {account.get('id')} (label: {account.get('label', 'N/A')})")
             else:
-                logger.info("使用单账号模式（.env 配置）")
+                # 随机选择账号
+                account, base_auth_headers = await get_auth_headers_with_retry()
+                if account:
+                    logger.info(f"使用多账号模式 - 账号: {account.get('id')} (label: {account.get('label', 'N/A')})")
+                else:
+                    logger.info("使用单账号模式（.env 配置）")
         except NoAccountAvailableError as e:
             logger.error(f"无可用账号: {e}")
             raise HTTPException(status_code=503, detail="没有可用的账号，请在管理页面添加账号或配置 .env 文件")

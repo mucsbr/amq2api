@@ -576,7 +576,10 @@ async function testSingleAccount(accountId){
   try {
     const r = await fetch('/v1/messages', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'X-Account-ID': accountId
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4',
         max_tokens: 50,
