@@ -57,6 +57,9 @@ def map_claude_model_to_amazonq(claude_model: str) -> str:
     if model_lower.startswith("claude-sonnet-4.5") or model_lower.startswith("claude-sonnet-4-5"):
         return "claude-sonnet-4.5"
 
+    if model_lower.startswith("claude-haiku"):
+        return "claude-haiku-4.5"
+
     # 其他所有模型映射到 claude-sonnet-4
     return "claude-sonnet-4"
 

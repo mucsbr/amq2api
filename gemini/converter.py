@@ -159,7 +159,7 @@ def map_claude_model_to_gemini(claude_model: str) -> str:
         "claude-3-5-sonnet-20241022": "claude-sonnet-4-5",
         "claude-3-5-sonnet-20240620": "claude-sonnet-4-5",
         "claude-opus-4": "gemini-3-pro-high",
-        "claude-haiku-4": "gemini-2.5-flash",
+        "claude-haiku-4": "claude-haiku-4.5",
         "claude-3-haiku-20240307": "gemini-2.5-flash"
     }
 

@@ -170,6 +170,7 @@
         <input id="filter_end_date" type="date" onchange="applyFilters()" placeholder="结束日期" style="max-width:150px" />
         <button class="btn-secondary" onclick="clearFilters()">清除筛选</button>
         <button class="btn-danger" onclick="batchDelete()" id="batch_delete_btn" style="display:none">删除选中</button>
+        <button class="btn-warning" onclick="testSelectedAccounts()" id="test_selected_btn" style="display:none">测试选中</button>
         <button class="btn-warning" onclick="testAllAccounts()">测试所有账号</button>
         <input id="test_message" placeholder="测试消息" value="Hello" style="max-width:200px" />
         <div id="test_status" class="chip" style="display:none"></div>
@@ -518,6 +519,7 @@ function updateSelectedCount() {
   const count = selectedIds.size;
   document.getElementById('selected_count').textContent = `已选择: ${count}`;
   document.getElementById('batch_delete_btn').style.display = count > 0 ? 'inline-block' : 'none';
+  document.getElementById('test_selected_btn').style.display = count > 0 ? 'inline-block' : 'none';
 }
 
 function toggleSelectAll() {
@@ -955,6 +957,87 @@ async function testSingleAccount(accountId) {
     setTestStatus(`测试失败`, false);
     document.getElementById('test_results').innerHTML = `<div class="card"><div style="color:var(--danger)">✗ ${acc.label}</div><div style="font-size:12px;margin-top:8px">${e}</div></div>`;
   }
+}
+
+async function testSelectedAccounts() {
+  if (selectedIds.size === 0) {
+    alert('请先选择要测试的账号');
+    return;
+  }
+
+  const msg = document.getElementById('test_message').value.trim() || 'Hello';
+  const accounts = await (await authFetch('/v2/accounts')).json();
+  const toTest = accounts.filter(a => selectedIds.has(a.id));
+
+  setTestStatus(`测试 ${toTest.length} 个账号...`, true);
+  document.getElementById('test_results').innerHTML = '';
+
+  let success = 0, failed = 0;
+  const results = [];
+
+  for (const acc of toTest) {
+    try {
+      const endpoint = acc.type === 'gemini' ? '/v1/gemini/messages' : '/v1/messages';
+      const headers = {
+        'content-type': 'application/json',
+        'X-Account-ID': acc.id
+      };
+      const adminKey = getAdminKey();
+      if (adminKey) headers['x-api-key'] = adminKey;
+
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: acc.type === 'gemini' ? 'gemini-3-pro' : 'claude-sonnet-4',
+          max_tokens: 50,
+          messages: [{ role: 'user', content: msg }]
+        })
+      });
+
+      if (!r.ok) {
+        failed++;
+        results.push(`<div class="card"><div style="color:var(--danger)">✗ ${acc.label}</div><div style="font-size:12px;margin-top:8px">${await r.text()}</div></div>`);
+        setTestStatus(`测试中... ${success+failed}/${toTest.length}`, true);
+        continue;
+      }
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+              const json = JSON.parse(data);
+              if (json.type === 'content_block_delta' && json.delta?.text) {
+                text += json.delta.text;
+              }
+            } catch(e) {}
+          }
+        }
+      }
+
+      success++;
+      results.push(`<div class="card"><div style="color:var(--success)">✓ ${acc.label}</div><div class="mono" style="font-size:12px;margin-top:8px">${text.substring(0,100)}${text.length > 100 ? '...' : ''}</div></div>`);
+      setTestStatus(`测试中... ${success+failed}/${toTest.length}`, true);
+    } catch(e) {
+      failed++;
+      results.push(`<div class="card"><div style="color:var(--danger)">✗ ${acc.label}</div><div style="font-size:12px;margin-top:8px">${e}</div></div>`);
+    }
+  }
+
+  setTestStatus(`完成: ${success} 成功, ${failed} 失败`, failed === 0);
+  document.getElementById('test_results').innerHTML = results.join('');
 }
 
 async function testAllAccounts() {

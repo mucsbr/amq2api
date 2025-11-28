@@ -140,6 +140,7 @@ def get_random_channel_by_model(model: str) -> Optional[str]:
     # Amazon Q 独占模型
     amazonq_only_models = [
         'claude-sonnet-4',  # 只有 Amazon Q 支持
+        'claude-haiku-4.5'
     ]
 
     # 如果是 Amazon Q 独占模型
