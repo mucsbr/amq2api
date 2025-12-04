@@ -14,7 +14,9 @@ services:
       - PORT=${PORT:-8080}
       - AMAZONQ_API_ENDPOINT=${AMAZONQ_API_ENDPOINT:-https://q.us-east-1.amazonaws.com/}
       - AMAZONQ_TOKEN_ENDPOINT=${AMAZONQ_TOKEN_ENDPOINT:-https://oidc.us-east-1.amazonaws.com/token}
+      - TIKTOKEN_CACHE_DIR=/home/appuser/.cache/tiktoken
     volumes:
       - ./data/token_cache:/home/appuser
       - ./data/db_data:/app/data
+      - ./data/tiktoken_cache:/home/appuser/.cache/tiktoken
     restart: unless-stopped
