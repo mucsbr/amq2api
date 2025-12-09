@@ -628,10 +628,10 @@ async def create_gemini_message(request: Request, _: bool = Depends(verify_api_k
                         content_length = response.headers.get('content-length', '')
                         if content_length == '0':
                             logger.error("[HTTP] Gemini API 返回空响应 (content-length: 0)")
-                            raise HTTPException(
-                                status_code=502,
-                                detail="Gemini API 返回空响应，请重试"
-                            )
+                            # 生成 SSE 错误事件
+                            error_event = 'event: error\ndata: {"type":"error","error":{"type":"api_error","message":"Gemini API 返回空响应，请重试"}}\n\n'
+                            yield error_event.encode('utf-8')
+                            return
 
                         if response.status_code != 200:
                             error_text = await response.aread()
