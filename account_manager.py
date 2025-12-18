@@ -123,19 +123,34 @@ def get_random_channel_by_model(model: str) -> Optional[str]:
         model: 请求的模型名称
 
     Returns:
-        渠道名称 ('amazonq' 或 'gemini')，如果没有可用账号则返回 None
+        渠道名称 ('amazonq', 'gemini' 或 'antigravity')，如果没有可用账号则返回 None
     """
-    # Gemini 独占模型
-    gemini_only_models = [
-        'claude-sonnet-4-5-thinking',  # Claude thinking 模型
-        'claude-opus-4-5-thinking',  # Claude thinking 模型
+    # 思考模型优先 Antigravity，其次 Gemini
+    thinking_models = [
+        'claude-sonnet-4-5-thinking',
+        'claude-opus-4-5-thinking',
     ]
 
-    # 如果是 Gemini 独占模型（以 gemini 开头或在独占列表中）
-    if model.startswith('gemini') or model in gemini_only_models:
+    if model in thinking_models:
+        # 优先 Antigravity
+        antigravity_accounts = list_enabled_accounts(account_type='antigravity')
+        if antigravity_accounts:
+            return 'antigravity'
+        # 其次 Gemini
         gemini_accounts = list_enabled_accounts(account_type='gemini')
         if gemini_accounts:
             return 'gemini'
+        return None
+
+    # Gemini 原生模型（以 gemini 开头）
+    if model.startswith('gemini'):
+        gemini_accounts = list_enabled_accounts(account_type='gemini')
+        if gemini_accounts:
+            return 'gemini'
+        # Antigravity 也支持 Gemini 模型
+        antigravity_accounts = list_enabled_accounts(account_type='antigravity')
+        if antigravity_accounts:
+            return 'antigravity'
         return None
 
     # Amazon Q 独占模型
@@ -144,39 +159,44 @@ def get_random_channel_by_model(model: str) -> Optional[str]:
         'claude-haiku-4.5'
     ]
 
-    # 如果是 Amazon Q 独占模型
     if model in amazonq_only_models:
         amazonq_accounts = list_enabled_accounts(account_type='amazonq')
         if amazonq_accounts:
             return 'amazonq'
         return None
 
-    # 对于其他模型（两个渠道都支持），按账号数量加权随机选择
-    # 注意：claude-sonnet-4.5 和 claude-sonnet-4-5 是同一个模型的不同叫法
+    # 对于其他模型（三个渠道都支持），按账号数量加权随机选择
     amazonq_accounts = list_enabled_accounts(account_type='amazonq')
     gemini_accounts = list_enabled_accounts(account_type='gemini')
+    antigravity_accounts = list_enabled_accounts(account_type='antigravity')
 
     amazonq_count = len(amazonq_accounts)
     gemini_count = len(gemini_accounts)
+    antigravity_count = len(antigravity_accounts)
+
+    total = amazonq_count + gemini_count + antigravity_count
 
     # 如果没有任何可用账号
-    if amazonq_count == 0 and gemini_count == 0:
+    if total == 0:
         return None
 
     # 如果只有一个渠道有账号
-    if amazonq_count == 0:
-        return 'gemini'
-    if gemini_count == 0:
+    if amazonq_count > 0 and gemini_count == 0 and antigravity_count == 0:
         return 'amazonq'
+    if gemini_count > 0 and amazonq_count == 0 and antigravity_count == 0:
+        return 'gemini'
+    if antigravity_count > 0 and amazonq_count == 0 and gemini_count == 0:
+        return 'antigravity'
 
     # 按账号数量加权随机选择
-    total = amazonq_count + gemini_count
     rand = random.randint(1, total)
 
     if rand <= amazonq_count:
         return 'amazonq'
-    else:
+    elif rand <= amazonq_count + gemini_count:
         return 'gemini'
+    else:
+        return 'antigravity'
 
 
 def get_account(account_id: str) -> Optional[Dict[str, Any]]:
@@ -321,10 +341,17 @@ def delete_account(account_id: str) -> bool:
         return cur.rowcount > 0
 
 
-def list_all_accounts() -> List[Dict[str, Any]]:
-    """获取所有账号"""
+def list_all_accounts(account_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    """获取所有账号
+
+    Args:
+        account_type: 可选，按账号类型过滤 (amazonq/gemini/antigravity)
+    """
     with _conn() as conn:
-        rows = conn.execute("SELECT * FROM accounts ORDER BY created_at DESC").fetchall()
+        if account_type:
+            rows = conn.execute("SELECT * FROM accounts WHERE type=? ORDER BY created_at DESC", (account_type,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM accounts ORDER BY created_at DESC").fetchall()
         return [_row_to_dict(r) for r in rows]
 
 

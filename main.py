@@ -30,6 +30,26 @@ from gemini.auth import GeminiTokenManager
 from gemini.converter import convert_claude_to_gemini
 from gemini.handler import handle_gemini_stream
 
+# Antigravity 模块导入
+from antigravity import (
+    ANTIGRAVITY_CLIENT_ID,
+    ANTIGRAVITY_CLIENT_SECRET,
+    ANTIGRAVITY_ENDPOINTS,
+    ANTIGRAVITY_HEADERS,
+    ANTIGRAVITY_DEFAULT_PROJECT_ID,
+    generate_auth_url,
+    exchange_code,
+    refresh_access_token as refresh_antigravity_token,
+    get_valid_access_token,
+    is_token_expired as is_antigravity_token_expired,
+    fetch_project_id,
+    convert_claude_to_antigravity,
+    build_antigravity_request_url,
+    build_antigravity_headers,
+    handle_antigravity_stream,
+    AntigravityTokenRefreshError,
+)
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -198,6 +218,9 @@ async def create_message(request: Request, _: bool = Depends(verify_api_key)):
             if account_type == 'gemini':
                 logger.info(f"指定账号为 Gemini 类型，转发到 Gemini 渠道")
                 return await create_gemini_message(request)
+            elif account_type == 'antigravity':
+                logger.info(f"指定账号为 Antigravity 类型，转发到 Antigravity 渠道")
+                return await create_antigravity_message(request)
         else:
             # 没有指定账号时，根据模型智能选择渠道
             channel = get_random_channel_by_model(model)
@@ -210,6 +233,9 @@ async def create_message(request: Request, _: bool = Depends(verify_api_key)):
             # 如果选择了 Gemini 渠道，转发到 /v1/gemini/messages
             if channel == 'gemini':
                 return await create_gemini_message(request)
+            # 如果选择了 Antigravity 渠道
+            elif channel == 'antigravity':
+                return await create_antigravity_message(request)
 
         # 继续使用 Amazon Q 渠道的原有逻辑
 
@@ -755,6 +781,202 @@ async def create_gemini_message(request: Request, _: bool = Depends(verify_api_k
         raise HTTPException(status_code=500, detail=f"内部服务器错误: {str(e)}")
 
 
+@app.post("/v1/antigravity/messages")
+async def create_antigravity_message(request: Request, _: bool = Depends(verify_api_key)):
+    """
+    Antigravity API 端点
+    接收 Claude 格式的请求，转换为 Antigravity 格式并返回流式响应
+    """
+    try:
+        # 生成每个请求唯一的 session_id（用于签名缓存）
+        # 优先使用请求头中的 x-session-id，否则生成新的
+        import uuid as uuid_module
+        session_id = request.headers.get("x-session-id", f"req-{uuid_module.uuid4().hex[:16]}")
+
+        # 解析请求体
+        request_data = await request.json()
+
+        # 转换为 ClaudeRequest 对象
+        claude_req = parse_claude_request(request_data)
+
+        # 检查是否指定了特定账号
+        specified_account_id = request.headers.get("X-Account-ID")
+
+        if specified_account_id:
+            account = get_account(specified_account_id)
+            if not account:
+                raise HTTPException(status_code=404, detail=f"账号不存在: {specified_account_id}")
+            if not account.get('enabled'):
+                raise HTTPException(status_code=403, detail=f"账号已禁用: {specified_account_id}")
+            if account.get('type') != 'antigravity':
+                raise HTTPException(status_code=400, detail=f"账号类型不是 Antigravity: {specified_account_id}")
+            logger.info(f"使用指定 Antigravity 账号: {account.get('label', 'N/A')} (ID: {account['id']})")
+        else:
+            # 随机选择 Antigravity 账号
+            account = get_random_account(account_type="antigravity")
+            if not account:
+                raise HTTPException(status_code=503, detail="没有可用的 Antigravity 账号")
+            logger.info(f"使用随机 Antigravity 账号: {account.get('label', 'N/A')} (ID: {account['id']})")
+
+        # 解析 other 字段
+        other = account.get("other") or {}
+        if isinstance(other, str):
+            import json
+            try:
+                other = json.loads(other)
+            except json.JSONDecodeError:
+                other = {}
+
+        # 获取有效的 access token
+        try:
+            access_token, updated_account = await get_valid_access_token(account)
+
+            # 如果 token 被刷新，更新数据库
+            if updated_account.get("accessToken") != account.get("accessToken"):
+                update_account(
+                    account["id"],
+                    access_token=updated_account["accessToken"],
+                    refresh_token=updated_account.get("refreshToken"),
+                    other=updated_account.get("other")
+                )
+                logger.info(f"Antigravity access token 已更新到数据库")
+                account = updated_account
+                other = account.get("other") or {}
+                if isinstance(other, str):
+                    import json
+                    try:
+                        other = json.loads(other)
+                    except json.JSONDecodeError:
+                        other = {}
+
+        except AntigravityTokenRefreshError as e:
+            logger.error(f"Antigravity token 刷新失败: {e}")
+            if e.code == "invalid_grant":
+                # 账号已被吊销，禁用
+                update_account(account["id"], enabled=False, other={
+                    **other,
+                    "revoked": True,
+                    "revoked_at": datetime.now().isoformat()
+                })
+                logger.error(f"账号 {account['id']} 已被吊销，自动禁用")
+            raise HTTPException(status_code=502, detail=f"Token 刷新失败: {str(e)}")
+
+        # 获取项目 ID
+        project_id = other.get("project")
+        if not project_id:
+            project_id = await fetch_project_id(access_token)
+            if project_id:
+                other["project"] = project_id
+                update_account(account["id"], other=other)
+                logger.info(f"Antigravity 项目 ID 已保存: {project_id}")
+
+        if not project_id:
+            project_id = ANTIGRAVITY_DEFAULT_PROJECT_ID
+            logger.warning(f"无法获取项目 ID，使用默认值: {project_id}")
+
+        # 转换为 Antigravity 请求
+        antigravity_request = convert_claude_to_antigravity(
+            request_data,
+            project=project_id,
+            session_id=session_id
+        )
+
+        # 构建请求头
+        headers = build_antigravity_headers(
+            access_token=access_token,
+            model=claude_req.model,
+            headers_config=ANTIGRAVITY_HEADERS
+        )
+
+        # API URL（使用第一个端点）
+        api_endpoint = other.get("api_endpoint", ANTIGRAVITY_ENDPOINTS[0])
+        api_url = build_antigravity_request_url(api_endpoint, streaming=True)
+
+        async def antigravity_byte_stream():
+            endpoints_to_try = [api_endpoint] + [e for e in ANTIGRAVITY_ENDPOINTS if e != api_endpoint]
+
+            for endpoint in endpoints_to_try:
+                url = build_antigravity_request_url(endpoint, streaming=True)
+
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    try:
+                        logger.info(f"[Antigravity HTTP] 请求: {url}")
+                        async with client.stream(
+                            "POST",
+                            url,
+                            json=antigravity_request,
+                            headers=headers
+                        ) as response:
+                            logger.info(f"[Antigravity HTTP] 响应: status_code={response.status_code}")
+
+                            if response.status_code >= 500:
+                                logger.warning(f"[Antigravity] 端点 {endpoint} 返回 {response.status_code}，尝试下一个")
+                                continue
+
+                            if response.status_code != 200:
+                                error_text = await response.aread()
+                                error_str = error_text.decode() if isinstance(error_text, bytes) else str(error_text)
+                                logger.error(f"Antigravity API 错误: {response.status_code} {error_str}")
+
+                                if response.status_code == 429:
+                                    raise HTTPException(
+                                        status_code=429,
+                                        detail="请求过于频繁，请稍后重试"
+                                    )
+
+                                raise HTTPException(
+                                    status_code=response.status_code,
+                                    detail=f"Antigravity API 错误: {error_str}"
+                                )
+
+                            # 返回字节流
+                            async for chunk in response.aiter_bytes():
+                                if chunk:
+                                    yield chunk
+
+                            # 成功完成，记录端点
+                            if endpoint != api_endpoint:
+                                other["api_endpoint"] = endpoint
+                                update_account(account["id"], other=other)
+                                logger.info(f"[Antigravity] 切换到端点: {endpoint}")
+
+                            return
+
+                    except httpx.ConnectError as e:
+                        logger.warning(f"[Antigravity] 端点 {endpoint} 连接失败: {e}")
+                        continue
+                    except httpx.TimeoutException as e:
+                        logger.warning(f"[Antigravity] 端点 {endpoint} 超时: {e}")
+                        continue
+
+            raise HTTPException(status_code=502, detail="所有 Antigravity 端点都不可用")
+
+        # 返回流式响应
+        async def claude_stream():
+            async for event in handle_antigravity_stream(
+                antigravity_byte_stream(),
+                model=claude_req.model,
+                session_id=session_id
+            ):
+                yield event
+
+        return StreamingResponse(
+            claude_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"处理 Antigravity 请求时发生错误: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"内部服务器错误: {str(e)}")
+
+
 # 账号管理 API 端点
 @app.get("/v2/accounts")
 async def list_accounts(_: bool = Depends(verify_admin_key)):
@@ -860,6 +1082,18 @@ async def manual_refresh_endpoint(account_id: str, _: bool = Depends(verify_admi
                 access_token=token_manager.access_token,
                 other=other
             )
+            return JSONResponse(content=refreshed_account)
+        elif account_type == "antigravity":
+            # Antigravity 账号刷新
+            other = account.get("other") or {}
+            if isinstance(other, str):
+                import json
+                try:
+                    other = json.loads(other)
+                except json.JSONDecodeError:
+                    other = {}
+
+            refreshed_account = await refresh_access_token(account)
             return JSONResponse(content=refreshed_account)
         else:
             # Amazon Q 账号刷新
@@ -1016,6 +1250,125 @@ async def donate_page():
     if not frontend_path.exists():
         raise HTTPException(status_code=404, detail="投喂站页面不存在")
     return FileResponse(str(frontend_path))
+
+
+# Antigravity 投喂站页面
+@app.get("/donate-antigravity", response_class=FileResponse)
+async def donate_antigravity_page():
+    """Antigravity 投喂站页面"""
+    from pathlib import Path
+    frontend_path = Path(__file__).parent / "frontend" / "donate-antigravity.html"
+    if not frontend_path.exists():
+        raise HTTPException(status_code=404, detail="Antigravity 投喂站页面不存在")
+    return FileResponse(str(frontend_path))
+
+
+# Antigravity OAuth 授权 URL 生成
+@app.get("/api/antigravity/auth-url")
+async def get_antigravity_auth_url():
+    """生成 Antigravity OAuth 授权 URL"""
+    try:
+        auth_info = generate_auth_url()
+        return JSONResponse(content={
+            "url": auth_info["url"],
+            "state": auth_info["state"],
+        })
+    except Exception as e:
+        logger.error(f"生成 Antigravity OAuth URL 失败: {e}")
+        raise HTTPException(status_code=500, detail=f"生成授权 URL 失败: {str(e)}")
+
+
+# Antigravity OAuth 回调处理（POST）
+@app.post("/api/antigravity/oauth-callback")
+async def antigravity_oauth_callback_post(request: Request):
+    """处理 Antigravity OAuth 回调（POST 请求）"""
+    try:
+        body = await request.json()
+        code = body.get("code")
+        state = body.get("state")
+
+        if not code:
+            raise HTTPException(status_code=400, detail="缺少授权码")
+        if not state:
+            raise HTTPException(status_code=400, detail="缺少 state 参数")
+
+        # 交换授权码获取 tokens
+        token_data = await exchange_code(code, state)
+
+        # 创建账号
+        from datetime import datetime
+        label = f"Antigravity-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+        other_data = {
+            "project": token_data.get("project_id", ""),
+            "api_endpoint": ANTIGRAVITY_ENDPOINTS[0],
+            "token_expires_at": token_data.get("expires_at"),
+            "email": token_data.get("email"),
+        }
+
+        account = create_account(
+            label=label,
+            client_id=ANTIGRAVITY_CLIENT_ID,
+            client_secret=ANTIGRAVITY_CLIENT_SECRET,
+            refresh_token=token_data["refresh_token"],
+            access_token=token_data["access_token"],
+            other=other_data,
+            enabled=True,
+            account_type="antigravity"
+        )
+
+        logger.info(f"Antigravity 账号创建成功: {account['id']} (email: {token_data.get('email', 'N/A')})")
+
+        return JSONResponse(content={
+            "success": True,
+            "account_id": account["id"],
+            "email": token_data.get("email"),
+            "project_id": token_data.get("project_id"),
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Antigravity OAuth 回调处理失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"处理 OAuth 回调失败: {str(e)}")
+
+
+@app.get("/api/antigravity/accounts")
+async def get_antigravity_accounts():
+    """获取 Antigravity 账号列表和统计信息"""
+    try:
+        accounts = list_enabled_accounts(account_type="antigravity")
+        all_accounts = list_all_accounts(account_type="antigravity")
+
+        # 格式化账号信息
+        formatted_accounts = []
+        for account in all_accounts:
+            other = account.get("other") or {}
+            if isinstance(other, str):
+                import json
+                try:
+                    other = json.loads(other)
+                except json.JSONDecodeError:
+                    other = {}
+
+            formatted_accounts.append({
+                "id": account.get("id"),
+                "label": account.get("label", "未命名账号"),
+                "enabled": account.get("enabled", False),
+                "projectId": other.get("project", "N/A"),
+                "email": other.get("email", "N/A"),
+                "created_at": account.get("created_at"),
+            })
+
+        return JSONResponse(content={
+            "accounts": formatted_accounts,
+            "activeCount": len(accounts),
+            "totalCount": len(all_accounts),
+        })
+
+    except Exception as e:
+        logger.error(f"获取 Antigravity 账号列表失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取账号列表失败: {str(e)}")
 
 
 # OAuth 回调页面

@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Claude 投喂站</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #1a73e8 0%, #4285f4 50%, #34a853 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .stats-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a73e8 0%, #34a853 100%);
+            border-radius: 10px;
+            color: white;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .donate-button {
+            background: linear-gradient(135deg, #34a853 0%, #1a73e8 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 5px 15px rgba(52, 168, 83, 0.4);
+            display: block;
+            margin: 0 auto;
+        }
+
+        .donate-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(52, 168, 83, 0.6);
+        }
+
+        .donate-button:active {
+            transform: translateY(0);
+        }
+
+        .donate-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .accounts-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .accounts-card h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .account-item {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #1a73e8;
+            transition: transform 0.2s;
+        }
+
+        .account-item:hover {
+            transform: translateX(5px);
+        }
+
+        .account-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .account-label {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .account-status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .account-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            font-size: 1em;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #1a73e8;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #f5c6cb;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c3e6cb;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .manual-input-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 2px dashed #1a73e8;
+        }
+
+        .manual-input-section h3 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .manual-input-section p {
+            margin-bottom: 15px;
+            color: #666;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 0.95em;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+
+        .input-group button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #1a73e8 0%, #34a853 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95em;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            white-space: nowrap;
+        }
+
+        .input-group button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(26, 115, 232, 0.4);
+        }
+
+        .input-group button:active {
+            transform: translateY(0);
+        }
+
+        .input-group button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .info-box {
+            background: #e8f4fd;
+            border: 1px solid #b8daff;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #004085;
+        }
+
+        .info-box h4 {
+            margin-bottom: 10px;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+        }
+
+        .info-box li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Antigravity Claude 投喂站</h1>
+            <p>分享你的 Google Cloud Code 账号，支持 Claude 思考模式</p>
+        </div>
+
+        <div class="stats-card">
+            <div class="info-box">
+                <h4>Antigravity 账号说明</h4>
+                <ul>
+                    <li>Antigravity 是 Google Cloud Code Assist 提供的 Claude API 访问</li>
+                    <li>支持 Claude 思考模式 (claude-*-thinking)</li>
+                    <li>使用 Google OAuth 授权，无需手动获取 Token</li>
+                </ul>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">活跃账号</div>
+                    <div class="stat-value" id="activeAccounts">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">总账号数</div>
+                    <div class="stat-value" id="totalAccounts">-</div>
+                </div>
+            </div>
+            <button class="donate-button" id="donateBtn" onclick="startDonation()">
+                投喂我的 Antigravity 账号
+            </button>
+
+            <!-- 手动输入区域 -->
+            <div class="manual-input-section">
+                <h3>手动提交授权链接</h3>
+                <p>如果弹出窗口被阻止或授权后出现错误，您可以手动复制授权完成后的完整 URL 并粘贴到下方输入框提交。</p>
+                <p style="font-size: 0.85em; color: #999;">示例: http://localhost:51121/oauth-callback?state=xxx&code=xxx</p>
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="manualUrlInput"
+                        placeholder="粘贴授权完成后的完整 URL..."
+                        autocomplete="off"
+                    />
+                    <button onclick="submitManualUrl()" id="submitManualBtn">提交</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="accounts-card">
+            <h2>账号列表</h2>
+            <div id="accountsList">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>正在加载账号信息...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 当前授权的 state（用于回调验证）
+        let currentAuthState = null;
+
+        // 启动投喂流程
+        async function startDonation() {
+            const donateBtn = document.getElementById('donateBtn');
+            donateBtn.disabled = true;
+            donateBtn.textContent = '正在生成授权链接...';
+
+            try {
+                // 从后端获取 OAuth URL（包含 PKCE）
+                const response = await fetch('/api/antigravity/auth-url');
+                if (!response.ok) {
+                    throw new Error('获取授权链接失败');
+                }
+
+                const data = await response.json();
+                const authUrl = data.url;
+                currentAuthState = data.state;
+
+                // 打开弹出窗口
+                const width = 600;
+                const height = 700;
+                const left = (screen.width - width) / 2;
+                const top = (screen.height - height) / 2;
+                const popup = window.open(
+                    authUrl,
+                    'OAuth Authorization',
+                    `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,location=no,status=no`
+                );
+
+                if (!popup) {
+                    throw new Error('弹出窗口被阻止，请允许弹出窗口后重试');
+                }
+
+                // 监听来自弹出窗口的消息
+                window.addEventListener('message', handleOAuthMessage);
+
+            } catch (error) {
+                const accountsList = document.getElementById('accountsList');
+                accountsList.insertAdjacentHTML('afterbegin', `
+                    <div class="error">
+                        ${escapeHtml(error.message)}
+                    </div>
+                `);
+            } finally {
+                donateBtn.disabled = false;
+                donateBtn.textContent = '投喂我的 Antigravity 账号';
+            }
+        }
+
+        // 处理 OAuth 回调消息
+        async function handleOAuthMessage(event) {
+            // 验证消息来源
+            if (event.origin !== window.location.origin) {
+                return;
+            }
+
+            const { type, code, state, error } = event.data;
+
+            if (type === 'oauth-error') {
+                const accountsList = document.getElementById('accountsList');
+                accountsList.insertAdjacentHTML('afterbegin', `
+                    <div class="error">
+                        授权失败: ${escapeHtml(error)}
+                    </div>
+                `);
+                window.removeEventListener('message', handleOAuthMessage);
+                return;
+            }
+
+            if (type === 'oauth-success' && code) {
+                await submitAuthCode(code, state || currentAuthState);
+                window.removeEventListener('message', handleOAuthMessage);
+            }
+        }
+
+        // 提交授权码到后端
+        async function submitAuthCode(code, state) {
+            try {
+                const response = await fetch('/api/antigravity/oauth-callback', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code, state })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || '提交失败');
+                }
+
+                const result = await response.json();
+
+                // 成功
+                const accountsList = document.getElementById('accountsList');
+                accountsList.insertAdjacentHTML('afterbegin', `
+                    <div class="success">
+                        账号添加成功！邮箱: ${escapeHtml(result.email || 'N/A')}，项目: ${escapeHtml(result.project_id || 'N/A')}
+                    </div>
+                `);
+
+                // 刷新账号列表
+                setTimeout(() => loadAccounts(), 1000);
+
+            } catch (err) {
+                const accountsList = document.getElementById('accountsList');
+                accountsList.insertAdjacentHTML('afterbegin', `
+                    <div class="error">
+                        添加失败: ${escapeHtml(err.message)}
+                    </div>
+                `);
+            }
+        }
+
+        // 加载账号列表
+        async function loadAccounts() {
+            try {
+                const response = await fetch('/api/antigravity/accounts');
+                if (!response.ok) {
+                    throw new Error('加载失败');
+                }
+
+                const data = await response.json();
+                displayAccounts(data);
+            } catch (error) {
+                document.getElementById('accountsList').innerHTML = `
+                    <div class="error">
+                        加载账号列表失败: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // 显示账号列表
+        function displayAccounts(data) {
+            const accountsList = document.getElementById('accountsList');
+
+            // 更新统计数据
+            document.getElementById('activeAccounts').textContent = data.activeCount || 0;
+            document.getElementById('totalAccounts').textContent = data.totalCount || 0;
+
+            // 显示账号列表
+            if (!data.accounts || data.accounts.length === 0) {
+                accountsList.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                        </svg>
+                        <h3>暂无账号</h3>
+                        <p>点击上方按钮投喂你的第一个 Antigravity 账号吧！</p>
+                    </div>
+                `;
+                return;
+            }
+
+            accountsList.innerHTML = data.accounts.map(account => {
+                return `
+                    <div class="account-item">
+                        <div class="account-header">
+                            <span class="account-label">${escapeHtml(account.label || '未命名账号')}</span>
+                            <span class="account-status ${account.enabled ? 'status-active' : 'status-inactive'}">
+                                ${account.enabled ? '活跃' : '禁用'}
+                            </span>
+                        </div>
+                        <div class="account-details">
+                            <div class="detail-item">
+                                <span class="detail-label">邮箱</span>
+                                <span class="detail-value">${escapeHtml(account.email || 'N/A')}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">项目 ID</span>
+                                <span class="detail-value">${escapeHtml(account.projectId || 'N/A')}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">添加时间</span>
+                                <span class="detail-value">${formatDate(account.created_at)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 格式化日期
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            try {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                });
+            } catch {
+                return 'N/A';
+            }
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 手动提交 URL
+        async function submitManualUrl() {
+            const input = document.getElementById('manualUrlInput');
+            const submitBtn = document.getElementById('submitManualBtn');
+            const url = input.value.trim();
+
+            if (!url) {
+                alert('请输入授权完成后的 URL');
+                return;
+            }
+
+            try {
+                // 解析 URL 提取 code 和 state 参数
+                const urlObj = new URL(url);
+                const code = urlObj.searchParams.get('code');
+                const state = urlObj.searchParams.get('state');
+
+                if (!code) {
+                    throw new Error('URL 中未找到授权码 (code 参数)');
+                }
+                if (!state) {
+                    throw new Error('URL 中未找到 state 参数');
+                }
+
+                // 禁用按钮和输入框
+                submitBtn.disabled = true;
+                submitBtn.textContent = '提交中...';
+                input.disabled = true;
+
+                // 提交授权码
+                await submitAuthCode(code, state);
+
+                // 清空输入框
+                input.value = '';
+
+            } catch (err) {
+                const accountsList = document.getElementById('accountsList');
+                accountsList.insertAdjacentHTML('afterbegin', `
+                    <div class="error">
+                        ${escapeHtml(err.message)}
+                    </div>
+                `);
+            } finally {
+                // 恢复按钮和输入框
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提交';
+                input.disabled = false;
+            }
+        }
+
+        // 检查是否有回调参数
+        function checkCallback() {
+            const params = new URLSearchParams(window.location.search);
+            const success = params.get('success');
+            const error = params.get('error');
+
+            if (success === 'true') {
+                const accountsList = document.getElementById('accountsList');
+                accountsList.insertAdjacentHTML('afterbegin', `
+                    <div class="success">
+                        账号添加成功！感谢你的投喂
+                    </div>
+                `);
+                // 清除 URL 参数
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } else if (error) {
+                const accountsList = document.getElementById('accountsList');
+                accountsList.insertAdjacentHTML('afterbegin', `
+                    <div class="error">
+                        添加失败: ${escapeHtml(decodeURIComponent(error))}
+                    </div>
+                `);
+                // 清除 URL 参数
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+
+        // 页面加载时执行
+        window.addEventListener('DOMContentLoaded', () => {
+            checkCallback();
+            loadAccounts();
+            // 每 30 秒刷新一次
+            setInterval(loadAccounts, 30000);
+        });
+    </script>
+</body>
+</html>
