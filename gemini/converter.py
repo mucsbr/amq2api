@@ -246,11 +246,11 @@ def convert_claude_to_gemini(claude_req: ClaudeRequest, project: str) -> Dict[st
 
     # 添加 system instruction
     if claude_req.system:
-        system_parts = []
+        system_parts = [{"text": "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**"}]
         # 处理 system 字段（可能是字符串或列表）
         if isinstance(claude_req.system, str):
             # 简单字符串格式
-            system_parts = [{"text": claude_req.system}]
+            system_parts.append({"text": claude_req.system})
         elif isinstance(claude_req.system, list):
             # 列表格式，提取所有 text 内容
             for item in claude_req.system:
