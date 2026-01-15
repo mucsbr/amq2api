@@ -11,9 +11,7 @@ from urllib.parse import unquote
 logger = logging.getLogger(__name__)
 
 # Antigravity API 常量
-ANTIGRAVITY_API_USER_AGENT = "google-api-nodejs-client/9.15.1"
-ANTIGRAVITY_API_CLIENT = "google-cloud-sdk vscode_cloudshelleditor/0.1"
-ANTIGRAVITY_CLIENT_METADATA = '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}'
+ANTIGRAVITY_API_USER_AGENT = "antigravity"
 
 
 class GeminiTokenManager:
@@ -74,8 +72,6 @@ class GeminiTokenManager:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "User-Agent": ANTIGRAVITY_API_USER_AGENT,
-            "X-Goog-Api-Client": ANTIGRAVITY_API_CLIENT,
-            "Client-Metadata": ANTIGRAVITY_CLIENT_METADATA
         }
 
     async def get_project_id(self) -> str:
@@ -105,6 +101,7 @@ class GeminiTokenManager:
                 raise Exception(f"获取项目 ID 失败: {error_text}")
 
             data = response.json()
+            logger.info(f"loadCodeAssist 响应: {data}")
             self.project_id = data.get("cloudaicompanionProject")
 
             # 如果没有获取到项目 ID，尝试 onboard
@@ -160,6 +157,7 @@ class GeminiTokenManager:
 
                     if response.status_code == 200:
                         data = response.json()
+                        logger.info(f"onboardUser 响应: {data}")
 
                         # 检查操作是否完成
                         if data.get("done"):
@@ -167,21 +165,30 @@ class GeminiTokenManager:
                             response_data = data.get("response", {})
 
                             # 尝试从不同格式中提取项目 ID
+                            # 格式1: response.cloudaicompanionProject (字符串或对象)
                             cloud_project = response_data.get("cloudaicompanionProject")
                             if isinstance(cloud_project, dict):
                                 project_id = cloud_project.get("id", "").strip()
                             elif isinstance(cloud_project, str):
                                 project_id = cloud_project.strip()
 
+                            # 格式2: 直接从顶层 data 获取
+                            if not project_id:
+                                cloud_project = data.get("cloudaicompanionProject")
+                                if isinstance(cloud_project, dict):
+                                    project_id = cloud_project.get("id", "").strip()
+                                elif isinstance(cloud_project, str):
+                                    project_id = cloud_project.strip()
+
                             if project_id:
                                 logger.info(f"onboardUser 成功获取项目 ID: {project_id}")
                                 return project_id
                             else:
-                                logger.error("onboardUser 响应中无项目 ID")
+                                logger.error(f"onboardUser 响应中无项目 ID，完整响应: {data}")
                                 return None
 
                         # 未完成，等待后重试
-                        logger.debug("onboardUser 操作未完成，等待 2 秒后重试...")
+                        logger.info(f"onboardUser 操作未完成，等待 2 秒后重试... (尝试 {attempt}/{max_attempts})")
                         await asyncio.sleep(2)
                         continue
 
